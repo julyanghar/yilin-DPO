@@ -50,7 +50,7 @@ class rDPOTrainer(DPOTrainer):
         rejected_mask = concatenated_batch["concatenated_attention_mask"][len_chosen:]
         chosen_label = concatenated_batch["concatenated_labels"][:len_chosen]
         rejected_label = concatenated_batch["concatenated_labels"][len_chosen:]
-
+        # 应该没有用到batch当中的prompt
         chosen_model_kwargs = (
             {
                 "labels": chosen_label,
@@ -103,7 +103,7 @@ class rDPOTrainer(DPOTrainer):
         #     attention_mask=batch["chosen_attention_mask"],
         #     **imageless_model_kwargs,
         # )
-
+        # MM-RLHF中，这里同时返回了new_chosen_labels(new_labels)
         chosen_logits = model(
             input_ids = chosen_batch,
             labels = chosen_label,
@@ -120,7 +120,7 @@ class rDPOTrainer(DPOTrainer):
                 labels = chosen_label,
                 images = batch['images']
             )
-
+        
         chosen_logps = self._get_batch_logps(
             chosen_logits,
             new_chosen_labels,
@@ -224,10 +224,11 @@ class rDPOTrainer(DPOTrainer):
         image_conditional_logits = image_conditional_pi_logratios - image_conditional_ref_logratios  # image-conditional preference
 
         # anchor_logits = policy_chosen_logps - reference_chosen_logps  # anchored preference
+        # yilin: beta_v
 
         # mDPO 
         losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
-            -torch.nn.functional.logsigmoid(self.beta * image_conditional_logits) 
+            -torch.nn.functional.logsigmoid(self.beta*self.args.beta_v * image_conditional_logits)*self.args.weight_vdpo
             # \
             # -torch.nn.functional.logsigmoid(self.beta * anchor_logits) 
 
@@ -302,6 +303,10 @@ class rDPOTrainer(DPOTrainer):
         chosen_labels = batch["chosen_labels"]
 
         prefix = "eval_" if train_eval == "eval" else ""
+
+        # yilin 临时加入sft_weight
+        if not hasattr(self, "sft_weight"):
+            self.sft_weight = 0.0
 
         if self.sft_weight > 0.0:
             if not self.is_encoder_decoder:

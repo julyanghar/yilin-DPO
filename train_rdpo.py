@@ -39,8 +39,11 @@ from PIL import Image
 import numpy as np
 from PIL import ImageFilter
 import wandb
+from peft import PeftModel
+from trl import DPOTrainer
+import torch.distributed as dist
 
-wandb.login(key="<your-wandb-key>")
+wandb.login(key="6472154846de7b4b9f2b26329fd0d9669e3eca27")
 local_rank = None
 
 import os
@@ -145,8 +148,14 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = 2e-5
     group_by_modality_length: bool = field(default=True)
-    output_dir: str = "./output/llava-1.6"
-    project_name: str = "VLM-alignment"
+    output_dir: str = field(
+        default="./output/llava-1.6",
+        metadata={"help": ""}
+    )
+    project_name: str = field(
+        default="VLM-alignment",
+        metadata={"help": ""}
+    )
     wandb_run_name: str = "17K-FULL"
     num_train_epochs: Optional[int] = field(
         default=1,
@@ -159,6 +168,22 @@ class TrainingArguments(transformers.TrainingArguments):
 
     sft_weight: float = field(
         default=0.0,
+        metadata={"help": "todo"}
+    )
+    is_resume: bool = field(
+        default=False,
+        metadata={"help": "todo, 用于lora训练时resume"}
+    )
+    resume_folder: str = field(
+        default=None,
+        metadata={"help": "todo, 用于lora训练时resume"}
+    )
+    beta_v: float = field(
+        default=1,
+        metadata={"help": "todo"}
+    )
+    weight_vdpo: float = field(
+        default=1,
         metadata={"help": "todo"}
     )
 
@@ -462,7 +487,7 @@ def preprocess_llama_2(
         labels=targets,
     )
 
-
+# yilin 相当于做一个预处理
 def preprocess_v1(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
@@ -670,7 +695,8 @@ class LazySupervisedDataset(Dataset):
             cur_len = cur_len if 'images' in sample else -cur_len
             length_list.append(cur_len)
         return length_list
-
+# yilin: getitem
+# 针对chosen和rejected做两种预处理(def preprocess)
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
@@ -755,7 +781,7 @@ class LazySupervisedDataset(Dataset):
             data_dict['retrieved_images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         return data_dict
 
-
+# yilin datacollator
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
@@ -842,8 +868,10 @@ def train():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
-
-    wandb.init(project=training_args.project_name, name=training_args.run_name)
+    # if not dist.is_initialized() or dist.get_rank() == 0:
+    if local_rank == 0:
+        wandb.init(project=training_args.project_name, name=training_args.run_name)
+    # wandb.init(project=training_args.project_name, name=training_args.run_name)
 
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
@@ -887,7 +915,7 @@ def train():
         )
     model.config.use_cache = False
 
-    print(model)
+    # print(model)
 
     if model_args.freeze_backbone:
         model.model.requires_grad_(False)
@@ -905,7 +933,8 @@ def train():
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
+    
+    # 这里开始加载LoRA
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -925,7 +954,10 @@ def train():
                 model.to(torch.float16)
                 print("to float16...")                
         rank0_print("Adding LoRA adapters...")
-        model = get_peft_model(model, lora_config)
+        if training_args.is_resume:
+            model = PeftModel.from_pretrained(model, training_args.resume_folder)
+        else:
+            model = get_peft_model(model, lora_config)
 
     if 'mpt' in model_args.model_name_or_path:
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -1039,8 +1071,8 @@ def train():
                         module = module.to(torch.bfloat16)
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
-    from peft import PeftModel
-    from trl import DPOTrainer
+    # from peft import PeftModel
+    # from trl import DPOTrainer
 
     trainer_callbacks = []
 
@@ -1069,10 +1101,16 @@ def train():
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
+   
     trainer.save_state()
-
     model.config.use_cache = True
 
+    
+    # yilin: 保存合并后的模型
+    # model = model.merge_and_unload()
+    # model.save_pretrained(training_args.output_dir)
+
+    # yilin: 只保存adapter，加载时要注意
     if training_args.lora_enable:
         state_dict = get_peft_state_maybe_zero_3(
             model.named_parameters(), training_args.lora_bias
@@ -1094,7 +1132,6 @@ def train():
     else:
         safe_save_model_for_hf_trainer(trainer=trainer,
                                        output_dir=training_args.output_dir)
-
 
 if __name__ == "__main__":
     train()

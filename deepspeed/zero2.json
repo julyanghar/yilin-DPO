@@ -10,6 +10,16 @@
   "bf16": {
       "enabled": "auto"
   },
+    "optimizer": {
+    "_comment": "AdamW",
+    "type": "AdamW",
+    "params": {
+        "lr": "auto",
+        "betas": "auto",
+        "eps": "auto",
+        "weight_decay": "auto"
+        }
+    },
   "train_micro_batch_size_per_gpu": "auto",
   "train_batch_size": "auto",
   "gradient_accumulation_steps": "auto",
