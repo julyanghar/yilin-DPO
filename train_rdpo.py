@@ -156,11 +156,14 @@ class TrainingArguments(transformers.TrainingArguments):
         default="VLM-alignment",
         metadata={"help": ""}
     )
+
     wandb_run_name: str = "17K-FULL"
+    
     num_train_epochs: Optional[int] = field(
         default=1,
         metadata={"help": "The number of training epochs for the reward model."},
     )
+    
     beta: float = field(
         default=0.1,
         metadata={"help": "todo"}
@@ -170,23 +173,52 @@ class TrainingArguments(transformers.TrainingArguments):
         default=0.0,
         metadata={"help": "todo"}
     )
+    
     is_resume: bool = field(
         default=False,
         metadata={"help": "todo, 用于lora训练时resume"}
     )
+    
     resume_folder: str = field(
         default=None,
         metadata={"help": "todo, 用于lora训练时resume"}
     )
+    
     beta_v: float = field(
         default=1,
         metadata={"help": "todo"}
     )
+    
     weight_vdpo: float = field(
         default=1,
         metadata={"help": "todo"}
     )
-
+    
+    only_anchor: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    
+    run_name: str = field(
+        default=None,
+        metadata={"help": "todo"}
+    )
+    ls_factor_weight: float = field(
+        default=0.0,
+        metadata={"help": "todo"}
+    )
+    yilin: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    only_cal_dpo: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    only_beta_dpo: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -870,7 +902,10 @@ def train():
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
     # if not dist.is_initialized() or dist.get_rank() == 0:
     if local_rank == 0:
-        wandb.init(project=training_args.project_name, name=training_args.run_name)
+        wandb.init(
+            project=training_args.project_name,
+            name=training_args.run_name
+        )
     # wandb.init(project=training_args.project_name, name=training_args.run_name)
 
     bnb_model_from_pretrained_args = {}

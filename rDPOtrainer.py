@@ -3,7 +3,7 @@ import torch.distributed
 from trl.trainer import DPOTrainer
 from trl.trainer.utils import pad_to_length
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 class rDPOTrainer(DPOTrainer):
     def concatenated_inputs(self, batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
@@ -209,6 +209,8 @@ class rDPOTrainer(DPOTrainer):
     ):
         pi_logratios = policy_chosen_logps - policy_rejected_logps
         ref_logratios = reference_chosen_logps - reference_rejected_logps
+        chosen_rewards = policy_chosen_logps - reference_chosen_logps
+        rejected_rewards = policy_rejected_logps - reference_rejected_logps
 
         if reference_free:
             ref_logratios = 0
@@ -223,14 +225,85 @@ class rDPOTrainer(DPOTrainer):
 
         image_conditional_logits = image_conditional_pi_logratios - image_conditional_ref_logratios  # image-conditional preference
 
-        # anchor_logits = policy_chosen_logps - reference_chosen_logps  # anchored preference
+        
         # yilin: beta_v
 
         # mDPO 
-        losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
-            -torch.nn.functional.logsigmoid(self.beta*self.args.beta_v * image_conditional_logits)*self.args.weight_vdpo
+        if self.args.only_anchor:
+            anchor_logits = policy_chosen_logps - reference_chosen_logps  # anchored preference
+            # anchor_negative_logits = reference_imageless_chosen_logps - policy_imageless_chosen_logps
+            losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
+            -torch.nn.functional.logsigmoid(self.beta*self.args.beta_v * image_conditional_logits)*self.args.weight_vdpo \
+            -torch.nn.functional.logsigmoid(self.beta * anchor_logits) 
+            # \
+            # -torch.nn.functional.logsigmoid(self.beta * anchor_negative_logits) 
+        elif self.args.yilin:
+            def all_gather_tensor(tensor):
+                if torch.distributed.is_available() and torch.distributed.is_initialized():
+                    tensor = tensor.detach()
+                    gathered_tensor = [torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())]
+                    torch.distributed.all_gather(gathered_tensor, tensor)
+                    tensor = torch.cat(gathered_tensor, dim=0)
+                # else:
+                #     print('not distributed')
+                return tensor
+            A = all_gather_tensor(logits.detach())
+            mean = torch.mean(A)
+            std = torch.std(A)
+            weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
+            sample_num = int(weight_sample.numel() * (1 - 0.2) )
+            sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
+            one_hot_like = torch.zeros_like(weight_sample)
+            one_hot_like[sample_index] = 1
+            
+            A_used = torch.mean(A[sample_index])
+            beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
+            cal_loss = F.mse_loss(chosen_rewards,
+                                  torch.tensor(1.0 / (2.0 * beta_used)).to(chosen_rewards)) + F.mse_loss(
+                rejected_rewards, torch.tensor(-1.0 / (2.0 * beta_used)).to(rejected_rewards))
+            beta_used = beta_used.clamp(min=1e-3)
+            losses = -torch.nn.functional.logsigmoid(beta_used * logits) \
+            -torch.nn.functional.logsigmoid(beta_used * image_conditional_logits)*self.args.weight_vdpo \
+            + 0.5 * cal_loss
+        elif self.args.only_cal_dpo:
+            cal_loss = F.mse_loss(chosen_rewards,
+                                  torch.tensor(1.0 / (2.0 * self.beta)).to(chosen_rewards)) + F.mse_loss(
+                rejected_rewards, torch.tensor(-1.0 / (2.0 * self.beta)).to(rejected_rewards))
+            
+            losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
+            -torch.nn.functional.logsigmoid(self.beta * image_conditional_logits) \
+            + 0.5 * cal_loss
+        elif self.args.only_beta_dpo:
+            def all_gather_tensor(tensor):
+                if torch.distributed.is_available() and torch.distributed.is_initialized():
+                    tensor = tensor.detach()
+                    gathered_tensor = [torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())]
+                    torch.distributed.all_gather(gathered_tensor, tensor)
+                    tensor = torch.cat(gathered_tensor, dim=0)
+                # else:
+                #     print('not distributed')
+                return tensor
+            A = all_gather_tensor(logits.detach())
+            mean = torch.mean(A)
+            std = torch.std(A)
+            weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
+            sample_num = int(weight_sample.numel() * (1 - 0.2) )
+            sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
+            one_hot_like = torch.zeros_like(weight_sample)
+            one_hot_like[sample_index] = 1
+            
+            A_used = torch.mean(A[sample_index])
+            beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
+            beta_used = beta_used.clamp(min=1e-3)
+            losses = -torch.nn.functional.logsigmoid(beta_used * logits) \
+            -torch.nn.functional.logsigmoid(beta_used * image_conditional_logits)
+        else:
+            losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
+                -torch.nn.functional.logsigmoid(self.beta*self.args.beta_v * image_conditional_logits)*self.args.weight_vdpo
             # \
             # -torch.nn.functional.logsigmoid(self.beta * anchor_logits) 
+            
+
 
         # losses -= policy_chosen_logps / 1024
         

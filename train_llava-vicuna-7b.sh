@@ -1,10 +1,12 @@
 lr=2e-4
 beta=0.1
 beta_v=1
-effective_batch=8
-weight_vdpo=0
-model_name="liuhaotian/llava-vicuna-7b"
-pretrained="/home/yilin/Re-Align/output/llava-vicuna-7b-rdpo-lora-lr-$lr-beta-$beta-new-qkvo-effective_batch-$effective_batch-beta_v-$beta_v-weight_vdpo-$weight_vdpo"
+effective_batch=10
+weight_vdpo=1.05
+model_name="liuhaotian/llava-v1.6-vicuna-7b"
+use_anchor=True
+pretrained="/home/yilin/Re-Align/output/llava-vicuna-7b-rdpo-lora-lr-$lr-beta-$beta-new-qkvo-effective_batch-$effective_batch-beta_v-$beta_v-weight_vdpo-$weight_vdpo-use_anchor_$use_anchor"
+
 
 
 # python -m debugpy --connect 5679 $(which deepspeed) --include=localhost:0 --master_port 60000 train_rdpo.py \
