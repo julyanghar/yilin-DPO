@@ -219,6 +219,10 @@ class TrainingArguments(transformers.TrainingArguments):
         default=False,
         metadata={"help": "todo"}
     )
+    similarity_weight: float = field(
+        default=0,
+        metadata={"help": "todo"}
+    )
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -811,6 +815,14 @@ class LazySupervisedDataset(Dataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict['images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
             data_dict['retrieved_images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+        
+        # yilin
+        if "cosine_similarity" in sources[0]:
+            cosine_similarity = sources[0]['cosine_similarity']
+            if isinstance(cosine_similarity, list):
+                cosine_similarity = cosine_similarity[0]
+            data_dict['cosine_similarity'] = cosine_similarity
+        
         return data_dict
 
 # yilin datacollator
@@ -876,6 +888,9 @@ class DataCollatorForSupervisedDataset(object):
             else:
                 batch['images'] = images
                 batch['retrieved_images'] = retrieved_images
+        if "cosine_similarity" in instances[0]:
+            cosine_similarity = [instance["cosine_similarity"] for instance in instances]
+            batch["cosine_similarity"] = cosine_similarity
 
         return batch
 
