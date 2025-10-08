@@ -223,6 +223,10 @@ class TrainingArguments(transformers.TrainingArguments):
         default=0,
         metadata={"help": "todo"}
     )
+    yilin_no_reverse: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):

@@ -256,7 +256,26 @@ class rDPOTrainer(DPOTrainer):
                                         (self.args.similarity_weight * cosine_similarity))))
             beta_used = beta_used.clamp(min=1e-3)
             losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
-            -torch.nn.functional.logsigmoid(self.beta * image_conditional_logits) \
+            -torch.nn.functional.logsigmoid(beta_used * image_conditional_logits) 
+        elif self.args.yilin_no_reverse:
+            if isinstance(cosine_similarity, list):
+                cosine_similarity = torch.tensor(
+                    cosine_similarity,
+                    device=logits.device,
+                    dtype=logits.dtype
+                )
+            elif isinstance(cosine_similarity, (float, int)):
+                cosine_similarity = torch.full_like(logits, fill_value=cosine_similarity, dtype=logits.dtype, device=logits.device)
+            elif isinstance(cosine_similarity, torch.Tensor):
+                cosine_similarity = cosine_similarity.to(
+                    device=logits.device,
+                    dtype=logits.dtype
+                )
+            beta_used = self.beta * (1 -torch.exp(-self.args.ls_factor_weight *  \
+                                        (self.args.similarity_weight * cosine_similarity)))
+            beta_used = beta_used.clamp(min=1e-3)
+            losses = -torch.nn.functional.logsigmoid(self.beta * logits) \
+            -torch.nn.functional.logsigmoid(beta_used * image_conditional_logits) 
         # elif self.args.both:
         #     def all_gather_tensor(tensor):
         #         if torch.distributed.is_available() and torch.distributed.is_initialized():
