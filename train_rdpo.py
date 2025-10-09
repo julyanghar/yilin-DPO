@@ -1180,6 +1180,10 @@ def train():
                 model.generation_config = generation_config
                 generation_config.save_pretrained(training_args.output_dir)
                 del model.config.max_length
+            # 在这里导出训练所有参数
+            json_str = json.dumps(training_args.to_dict(), indent=4)  
+            with open(training_args.output_dir + "/training_args.json", "w") as f:
+                f.write(json_str)
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))

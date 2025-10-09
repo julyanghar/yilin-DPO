@@ -9,18 +9,17 @@ only_cal_dpo=False
 only_beta_dpo=False
 only_anchor=False
 
-yilin=False
-
-yilin_no_reverse=True
+yilin=True
+yilin_no_reverse=False
 similarity_weight=1
-ls_factor_weight=0.5
+ls_factor_weight=0.4
 
 
-run_name="only-yilin-no_reverse--$base_model-lr-$lr-acc_batch-$effective_batch-ls_factor_weight-$ls_factor_weight-similarity_weight-$similarity_weight-h100-fix-pooler_output"
+run_name="only-yilin-$base_model-lr-$lr-acc_batch-$effective_batch-ls_factor_weight-$ls_factor_weight-similarity_weight-$similarity_weight-a6000-pooler_output"
 pretrained="/home/yilin/Re-Align/output/$base_model/$run_name"
 
 data_path="./preference_data/yilin_pref_data_pooler_output.json"
-# data_path="./preference_data/yilin_pref_data_last_hidden.json"
+# data_path="./preference_data/yilin_pref_data_last_hidden_state.json"
 
 # tasks="hallusion_bench_image"
 tasks="pope_random,pope_pop,pope_adv"
@@ -34,7 +33,7 @@ tasks="pope_random,pope_pop,pope_adv"
 
 
 # python -m debugpy --connect 5679 $(which deepspeed) --include=localhost:0 --master_port 60000 train_rdpo.py \
-deepspeed --include=localhost:0,1 --master_port 60002 train_rdpo.py \
+deepspeed --include=localhost:0,1,2,3,4,5,6,7 --master_port 60002 train_rdpo.py \
     --model_name_or_path $model_name \
     --data_path $data_path \
     --deepspeed "./deepspeed/zero2.json" \
@@ -51,7 +50,7 @@ deepspeed --include=localhost:0,1 --master_port 60002 train_rdpo.py \
     --lora_enable True \
     --beta $beta \
     --output_dir $pretrained \
-    --image_folder "/home/yilin/dataset/train2014/" \
+    --image_folder "/data/yilin/train2014/" \
     --mm_projector_lr 2e-5 \
     --mm_projector_type mlp2x_gelu \
     --beta_v $beta_v \
@@ -65,6 +64,6 @@ deepspeed --include=localhost:0,1 --master_port 60002 train_rdpo.py \
     --only_beta_dpo $only_beta_dpo \
     --similarity_weight $similarity_weight \
     --yilin_no_reverse $yilin_no_reverse \
-    # --max_steps 2 \
+    --max_steps 3 \
     # --num_train_epochs 1\
     # --is_resume True \
