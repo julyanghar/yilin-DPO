@@ -16,7 +16,7 @@ only_beta_dpo=False
 ls_factor_weight=0.6
 
 
-run_name="yilin-$yilin-$base_model-lr-$lr-acc_batch-$effective_batch-ls_factor_weight-$ls_factor_weight-only_anchor-$only_anchor-only_beta-$only_beta_dpo-only_cal-$only_cal_dpo-h100"
+run_name="no_reverse-$base_model-lr-$lr-acc_batch-$effective_batch-ls_factor_weight-$ls_factor_weight-only_anchor-$only_anchor-only_beta-$only_beta_dpo-only_cal-$only_cal_dpo-h100"
 pretrained="/home/yilin/Re-Align/output/$base_model/$run_name"
 
 # data_path="./preference_data/pref_data.json"
