@@ -42,6 +42,8 @@ import wandb
 from peft import PeftModel
 from trl import DPOTrainer
 import torch.distributed as dist
+# from janus.models import MultiModalityCausalLM, VLChatProcessor
+# from janus.utils.io import load_pil_images
 
 wandb.login(key="6472154846de7b4b9f2b26329fd0d9669e3eca27")
 local_rank = None
@@ -183,50 +185,39 @@ class TrainingArguments(transformers.TrainingArguments):
         default=None,
         metadata={"help": "todo, 用于lora训练时resume"}
     )
-    
-    beta_v: float = field(
-        default=1,
-        metadata={"help": "todo"}
-    )
-    
-    weight_vdpo: float = field(
-        default=1,
-        metadata={"help": "todo"}
-    )
-    
-    only_anchor: bool = field(
-        default=False,
-        metadata={"help": "todo"}
-    )
-    
+
     run_name: str = field(
         default=None,
         metadata={"help": "todo"}
     )
-    ls_factor_weight: float = field(
+    ls_factor_text_weight: float = field(
         default=0.0,
         metadata={"help": "todo"}
     )
-    yilin: bool = field(
+    use_text_similarity: bool = field(
         default=False,
         metadata={"help": "todo"}
     )
-    only_cal_dpo: bool = field(
+    ls_factor_img_weight: float = field(
+        default=0.0,
+        metadata={"help": "todo"}
+    )
+    use_img_similarity: bool = field(
         default=False,
         metadata={"help": "todo"}
     )
-    only_beta_dpo: bool = field(
-        default=False,
-        metadata={"help": "todo"}
-    )
-    similarity_weight: float = field(
-        default=0,
-        metadata={"help": "todo"}
-    )
-    yilin_no_reverse: bool = field(
-        default=False,
-        metadata={"help": "todo"}
-    )
+    
+    # only_cal_dpo: bool = field(
+    #     default=False,
+    #     metadata={"help": "todo"}
+    # )
+    # only_beta_dpo: bool = field(
+    #     default=False,
+    #     metadata={"help": "todo"}
+    # )
+
+
+
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -821,12 +812,17 @@ class LazySupervisedDataset(Dataset):
             data_dict['retrieved_images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         
         # yilin
-        if "cosine_similarity" in sources[0]:
-            cosine_similarity = sources[0]['cosine_similarity']
-            if isinstance(cosine_similarity, list):
-                cosine_similarity = cosine_similarity[0]
-            data_dict['cosine_similarity'] = cosine_similarity
+        # if "cosine_similarity" in sources[0]:
+        #     cosine_similarity = sources[0]['cosine_similarity']
+        #     if isinstance(cosine_similarity, list):
+        #         cosine_similarity = cosine_similarity[0]
+        #     data_dict['cosine_similarity'] = cosine_similarity
         
+
+        data_dict['img_similarity'] = sources[0]['img_similarity']
+        data_dict['text_similarity'] = sources[0]['text_similarity']
+            
+
         return data_dict
 
 # yilin datacollator
@@ -892,9 +888,13 @@ class DataCollatorForSupervisedDataset(object):
             else:
                 batch['images'] = images
                 batch['retrieved_images'] = retrieved_images
-        if "cosine_similarity" in instances[0]:
-            cosine_similarity = [instance["cosine_similarity"] for instance in instances]
-            batch["cosine_similarity"] = cosine_similarity
+
+        # if "cosine_similarity" in instances[0]:
+        #     cosine_similarity = [instance["cosine_similarity"] for instance in instances]
+        #     batch["cosine_similarity"] = cosine_similarity
+
+        batch['img_similarity'] = instances[0]['img_similarity']
+        batch['text_similarity'] = instances[0]['text_similarity']
 
         return batch
 
@@ -1019,6 +1019,14 @@ def train():
             cache_dir=training_args.cache_dir,
             model_max_length=training_args.model_max_length,
             padding_side="right"
+        )
+    elif "Janus" in model_args.model_name_or_path:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            model_max_length=training_args.model_max_length,
+            padding_side="right",
+            use_fast=False,
         )
     else:
         tokenizer = transformers.AutoTokenizer.from_pretrained(
