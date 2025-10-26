@@ -42,6 +42,8 @@ import wandb
 from peft import PeftModel
 from trl import DPOTrainer
 import torch.distributed as dist
+from transformers import set_seed
+import random
 # from janus.models import MultiModalityCausalLM, VLChatProcessor
 # from janus.utils.io import load_pil_images
 
@@ -206,17 +208,62 @@ class TrainingArguments(transformers.TrainingArguments):
         default=False,
         metadata={"help": "todo"}
     )
-    
-    # only_cal_dpo: bool = field(
-    #     default=False,
-    #     metadata={"help": "todo"}
-    # )
-    # only_beta_dpo: bool = field(
-    #     default=False,
-    #     metadata={"help": "todo"}
-    # )
-
-
+    beta_dpo: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    ls_factor_weight: float = field(
+        default=1,
+        metadata={"help": "todo"}
+    )
+    use_anchor: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    yilin_anchor: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    use_sample_weight: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    sample_anchor:float = field(
+        default=0.8,
+        metadata={"help": "todo"}
+    )
+    anchor_beta:float = field(
+        default=0.1,
+        metadata={"help": "todo"}
+    )
+    random_seed: bool = field(
+        default=True,
+        metadata={"help": "todo"}
+    )
+    filter_factor_img_upper: float = field(
+        default=1,
+        metadata={"help": "todo"}
+    )
+    filter_factor_img_lower: float = field(
+        default=0,
+        metadata={"help": "todo"}
+    )
+    filter_factor_text_upper: float = field(
+        default=1,
+        metadata={"help": "todo"}
+    )
+    filter_factor_text_lower: float = field(
+        default=0,
+        metadata={"help": "todo"}
+    )
+    use_dpop_text: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
+    dpop_text_lambda: float = field(
+        default=5,
+        metadata={"help": "todo"}
+    )
 
 
 
@@ -917,6 +964,10 @@ def train():
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    if training_args.random_seed:
+        seed = random.randint(0, 2**32 - 1)
+        set_seed(seed)
+        training_args.seed = seed
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
     # if not dist.is_initialized() or dist.get_rank() == 0:
@@ -1190,6 +1241,12 @@ def train():
                 del model.config.max_length
             # 在这里导出训练所有参数
             json_str = json.dumps(training_args.to_dict(), indent=4)  
+            if not os.path.exists(training_args.output_dir):
+                # 不存在就创建
+                os.makedirs(training_args.output_dir)
+                print(f"已创建文件夹: {training_args.output_dir}")
+            else:
+                print(f"文件夹已存在: {training_args.output_dir}")
             with open(training_args.output_dir + "/training_args.json", "w") as f:
                 f.write(json_str)
             model.config.save_pretrained(training_args.output_dir)
