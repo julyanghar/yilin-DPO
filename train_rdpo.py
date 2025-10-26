@@ -26,7 +26,7 @@ import transformers
 from transformers import TrainerCallback, GenerationConfig
 from torchvision import transforms
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 from llava.train.llava_trainer import LLaVArDPOTrainer
 from llava import conversation as conversation_lib
 from llava.model import *
@@ -1198,7 +1198,11 @@ def train():
                                               data_args=data_args)
     # from peft import PeftModel
     # from trl import DPOTrainer
-
+    # 随机选12K个数据
+    indices = random.sample(range(len(data_module['train_dataset'])), 12000)
+    print(f"seed: {seed}, indices: {indices[:10]}")
+    shuffled_dataset = Subset(data_module['train_dataset'], indices)
+    data_module['train_dataset'] = shuffled_dataset
     trainer_callbacks = []
 
     if training_args.lora_enable:

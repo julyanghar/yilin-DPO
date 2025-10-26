@@ -739,7 +739,7 @@ def test_mm_dpo():
     i = 0
     use_anchor=False
     data_path="./dataset/converted-dpo_pairs.json"
-    times = 6
+    times = 3
     effective_batch = 8
     lrs = [1e-5]
     processes = []
