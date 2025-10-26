@@ -740,13 +740,13 @@ def preprocess(
         return dict(rejected_input_ids=input_ids, rejected_labels=targets)
 
 
-class LazySupervisedDataset(Dataset):
+class Re_AlignDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(self, data_path: str,
                  tokenizer: transformers.PreTrainedTokenizer,
                  data_args: DataArguments):
-        super(LazySupervisedDataset, self).__init__()
+        super(Re_AlignDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
 
         rank0_print("Formatting inputs...Skip in lazy mode")
@@ -874,7 +874,7 @@ class LazySupervisedDataset(Dataset):
 
 # yilin datacollator
 @dataclass
-class DataCollatorForSupervisedDataset(object):
+class DataCollatorForRe_AlignDataset(object):
     """Collate examples for supervised fine-tuning."""
 
     tokenizer: transformers.PreTrainedTokenizer
@@ -949,10 +949,10 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
+    train_dataset = Re_AlignDataset(tokenizer=tokenizer,
                                 data_path=data_args.data_path,
                                 data_args=data_args)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    data_collator = DataCollatorForRe_AlignDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
                 data_collator=data_collator)
