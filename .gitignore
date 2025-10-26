@@ -48,3 +48,4 @@ image/
 output/
 evaluation/
 /*.sh
+dataset/

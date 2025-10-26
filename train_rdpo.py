@@ -786,7 +786,11 @@ class Re_AlignDataset(Dataset):
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
-            retrieved_image = Image.open(os.path.join(image_folder, retrieved_image_file)).convert('RGB')
+            # 
+            if retrieved_image_file is not None:
+                retrieved_image = Image.open(os.path.join(image_folder, retrieved_image_file)).convert('RGB')
+            else:
+                retrieved_image = None
             if self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -803,12 +807,14 @@ class Re_AlignDataset(Dataset):
                 image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                 image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
 
-                retrieved_image = expand2square(retrieved_image, tuple(int(x*255) for x in processor.image_mean))
-                retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
+                if retrieved_image is not None:
+                    retrieved_image = expand2square(retrieved_image, tuple(int(x*255) for x in processor.image_mean))
+                    retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
 
             else:
                 image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-                retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
+                if retrieved_image is not None:
+                    retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
 
             sources = preprocess_multimodal(
                 copy.deepcopy([e["chosen"] for e in sources]),
@@ -931,10 +937,16 @@ class DataCollatorForRe_AlignDataset(object):
             retrieved_images = [instance['retrieved_images'] for instance in instances]
             if all(x is not None and x.shape == images[0].shape for x in images):
                 batch['images'] = torch.stack(images)
-                batch['retrieved_images'] = torch.stack(retrieved_images)
+                if all(x is not None for x in retrieved_images):
+                    batch['retrieved_images'] = torch.stack(retrieved_images)
+                else:
+                    batch['retrieved_images'] = None
             else:
                 batch['images'] = images
-                batch['retrieved_images'] = retrieved_images
+                if all(x is not None for x in retrieved_images):
+                    batch['retrieved_images'] = retrieved_images
+                else:
+                    batch['retrieved_images'] = None
 
         # if "cosine_similarity" in instances[0]:
         #     cosine_similarity = [instance["cosine_similarity"] for instance in instances]
