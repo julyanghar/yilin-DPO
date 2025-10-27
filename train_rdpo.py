@@ -748,7 +748,9 @@ class Re_AlignDataset(Dataset):
                  data_args: DataArguments):
         super(Re_AlignDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
-
+        # 随机采样 12000 条
+        list_data_dict = random.sample(list_data_dict, 12000)
+        print(f"top 10 data: {[x['idx'] for x in list_data_dict[:10]]}")
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
@@ -1199,10 +1201,10 @@ def train():
     # from peft import PeftModel
     # from trl import DPOTrainer
     # 随机选12K个数据
-    indices = random.sample(range(len(data_module['train_dataset'])), 12000)
-    print(f"seed: {seed}, indices: {indices[:10]}")
-    shuffled_dataset = Subset(data_module['train_dataset'], indices)
-    data_module['train_dataset'] = shuffled_dataset
+    # indices = random.sample(range(len(data_module['train_dataset'])), 12000)
+    # print(f"seed: {seed}, indices: {indices[:10]}")
+    # shuffled_dataset = Subset(data_module['train_dataset'], indices)
+    # data_module['train_dataset'] = shuffled_dataset
     trainer_callbacks = []
 
     if training_args.lora_enable:

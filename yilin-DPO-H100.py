@@ -581,81 +581,6 @@ def test_filter_img():
     processes = [] 
 
 
-
-def test_dpop():
-    i = 0
-    # run_name="anchor-lr-$lr-acc_batch-$effective_batch-beta-$beta"
-    times = 5
-    lr = 1e-5
-    processes = []
-
-    for time, use_dpop_text, use_anchor, dpop_text_lambda in itertools.product(range(times),
-                                                [True], [True, False], [5,50,500]):
-    # for time in range(times):
-            if i >= len(master_ports):
-                raise ValueError(f"i={i} 超出 master_ports 长度 {len(master_ports)}")
-            master_port = master_ports[i]
-            i += 1
-            # run_name=f"img_filter-upper-{filter_factor_img_upper}-lower-{filter_factor_img_lower}-lr-{lr}-acc_batch-{effective_batch}-beta-{beta}-use_anchor-{use_anchor}-{time}"
-            run_name=f"use_dpop_text-{use_dpop_text}-lambda-{dpop_text_lambda}-use_anchor-{use_anchor}-lr-{lr}-acc_batch-{effective_batch}-beta-{beta}-{time}"
-            pretrained=f"/home/yilin/yilin-DPO/output/{base_model}/{run_name}"
-
-            cmd = [
-                # f"""python -m debugpy --connect 5679 $(which deepspeed) --include=localhost:0 --master_port {master_port} train_rdpo.py \
-                f"""deepspeed --include=localhost:0,1  --master_port {master_port} train_rdpo.py \
-                --model_name_or_path {model_name} \
-                --data_path {data_path} \
-                --deepspeed "./deepspeed/zero2.json" \
-                --per_device_train_batch_size 1 \
-                --per_device_eval_batch_size 1 \
-                --gradient_accumulation_steps {effective_batch} \
-                --evaluation_strategy "no" \
-                --save_strategy "no" \
-                --learning_rate {lr} \
-                --weight_decay 0. \
-                --warmup_ratio 0.03 \
-                --lr_scheduler_type "cosine" \
-                --bf16 True \
-                --lora_enable True \
-                --beta {beta} \
-                --output_dir {pretrained} \
-                --image_folder {image_folder} \
-                --mm_projector_lr 2e-5 \
-                --mm_projector_type mlp2x_gelu \
-                --run_name {run_name} \
-                --project_name "yilin-align" \
-                --use_anchor {use_anchor} \
-                --use_dpop_text {use_dpop_text} \
-                --dpop_text_lambda {dpop_text_lambda} """
-            ]
-            print(f"🚀 Running {base_model} | lr={lr}, bs={effective_batch}")
-            p = subprocess.Popen(cmd, shell=True)
-            p.cmd = cmd
-            
-            processes.append(p)
-            print(f"当前进程数: {len(processes)}")
-                # 如果已经启动了 3 个，就等待它们跑完
-            if len(processes) == 3:
-                for p in processes:
-                    p.wait()     # 等待当前这批都结束
-                    if p.returncode != 0:
-                        print(f"❌ Failed: {base_model} cmd={p.cmd}")
-                    else:
-                        print(f"✅ Finished: {base_model} cmd={p.cmd}")
-                i = 0
-                processes = []     # 清空进程列表，开始下一批
-
-
-    for p in processes:
-        p.wait()     # 等待当前这批都结束
-        if p.returncode != 0:
-            print(f"❌ Failed: {base_model} cmd={p.cmd}")
-        else:
-            print(f"✅ Finished: {base_model} cmd={p.cmd}")
-    processes = [] 
-
-
-
 def test_only_anchor_logits():
     i = 0
     # run_name="anchor-lr-$lr-acc_batch-$effective_batch-beta-$beta"
@@ -738,13 +663,14 @@ def test_only_anchor_logits():
 def test_mm_dpo():
     i = 0
     use_anchor=False
-    data_path="./dataset/converted-dpo_pairs.json"
-    times = 3
-    effective_batch = 8
-    lrs = [1e-5]
+    # data_path="./dataset/converted-dpo_pairs.json"
+    data_path="./dataset/no-CN-converted-dpo_pairs.json"
+    times = 5
+    effective_batch = 12
+    lrs = [1e-6]
     processes = []
     master_ports=[60010,60011,60012]
-    for time, lr, use_anchor in itertools.product(range(times), lrs, [True, False]):
+    for time, lr, use_anchor in itertools.product(range(3,times), lrs, [True, False]):
     # for time in range(times):
             if i >= len(master_ports):
                 raise ValueError(f"i={i} 超出 master_ports 长度 {len(master_ports)}")
@@ -779,6 +705,7 @@ def test_mm_dpo():
                 --project_name "yilin-align" \
                 --use_anchor {use_anchor} """
             ]
+                # --max_steps 3 \
             print(f"🚀 Running {base_model} | lr={lr}, bs={effective_batch}")
             p = subprocess.Popen(cmd, shell=True)
             p.cmd = cmd

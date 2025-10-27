@@ -1,17 +1,8 @@
 [
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.8-use_anchor-True-3",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.9-use_anchor-True-4",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.8-use_anchor-True-0",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.9-use_anchor-True-1",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.9-use_anchor-True-2",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.8-use_anchor-True-1",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.7-use_anchor-True-3",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.8-use_anchor-True-2",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.8-use_anchor-True-4",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.7-use_anchor-True-1",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.9-use_anchor-True-0",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.9-use_anchor-True-3",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.7-use_anchor-True-4",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.7-use_anchor-True-2",
-    "filter-pooler_output-lr-1e-05-acc_batch-12-beta-0.1-upper-1-lower-0.7-use_anchor-True-0"
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-0",
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-1",
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-0",
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-1",
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-2",
+    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-2"
 ]
