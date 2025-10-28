@@ -1,0 +1,30 @@
+[
+        {
+        "idx": 0,
+        "image": "COCO_train2014_000000353952.jpg",
+        "retrieved_image": "COCO_train2014_000000449517.jpg",
+        "masked_response": "This is a vintage black and white image of a group of [MASK] gathered around a [MASK] on a [MASK]. There are [MASK] in the scene, standing at various positions around the [MASK]. They seem to be preparing to [MASK] the [MASK] or possibly just interacting with it. Two of the [MASK] have [MASK] that can be seen. The [MASK] is prominently featured in the center of the image, with its [MASK] facing slightly to the left. The [MASK] around the [MASK] appear to be enjoying the interaction, giving the image a nostalgic and timeless feel.",
+        "chosen": [
+            {
+                "content": "Describe this image in detail.",
+                "role": "user"
+            },
+            {
+                "content": "This is a vintage black and white image of a group of people gathered around a horse on a street. There are eleven people in the scene, standing at various positions around the horse. They seem to be preparing to ride the horse or possibly just interacting with it.  Two of the people have ties that can be seen. The horse is prominently featured in the center of the image, with its head facing slightly to the left. The people around the horse appear to be enjoying the interaction, giving the image a nostalgic and timeless feel.",
+                "role": "assistant"
+            }
+        ],
+        "rejected": [
+            {
+                "content": "Describe this image in detail.",
+                "role": "user"
+            },
+            {
+                "content": "This is a vintage black and white image of a group of men gathered around a horse on a dirt floor. There are two men in the scene, standing at various positions around the horse. They seem to be preparing to groom the horse or possibly just interacting with it. Two of the men have hats that can be seen. The horse is prominently featured in the center of the image, with its head facing slightly to the left. The men around the horse appear to be enjoying the interaction, giving the image a nostalgic and timeless feel.",
+                "role": "assistant"
+            }
+        ],
+        "img_similarity": 0.6407378912,
+        "text_similarity": 0.8562058210372925
+    }
+]

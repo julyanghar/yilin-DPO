@@ -256,16 +256,51 @@ class rDPOTrainer(DPOTrainer):
         else:
             imageless_chosen_logits = new_imageless_chosen_labels = imageless_chosen_logps = None
 
-        return (chosen_logps, rejected_logps, imageless_chosen_logps, chosen_logits, rejected_logits, imageless_chosen_logits)
+        
+        if batch['masked_images'] is not None:
+            masked_image_chosen_logits = model(
+                input_ids = chosen_batch,
+                labels = chosen_label,
+                images=batch['masked_images'],
+                attention_mask=chosen_mask,
+                **chosen_model_kwargs,
+            ).logits.to(torch.float32)
+
+            _, _, _, _, _, masked_image_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
+                    input_ids = chosen_batch,
+                    position_ids = None,
+                    attention_mask = chosen_mask,
+                    past_key_values = None,
+                    labels = chosen_label,
+                    images = batch['masked_images']
+                )
+            # 这里或许可以不用noisy
+            masked_image_chosen_logps = self._get_noisy_batch_logps(
+                imageless_chosen_logits,
+                imageless_chosen_logits,
+                new_imageless_chosen_labels,
+                average_log_prob=False,
+            )
+
+        else:
+            masked_image_chosen_logits = masked_image_chosen_labels = masked_image_chosen_logps = None
+
+
+        return (
+                chosen_logps, rejected_logps, imageless_chosen_logps, masked_image_chosen_logps,
+                chosen_logits, rejected_logits, imageless_chosen_logits, masked_image_chosen_logits
+                )
 
     def dpo_loss(
         self,
         policy_chosen_logps: torch.FloatTensor,
         policy_rejected_logps: torch.FloatTensor,
         policy_imageless_chosen_logps: torch.FloatTensor, 
+        policy_masked_image_chosen_logps: torch.FloatTensor, 
         reference_chosen_logps: torch.FloatTensor,
         reference_rejected_logps: torch.FloatTensor,
         reference_imageless_chosen_logps: torch.FloatTensor, 
+        reference_masked_image_chosen_logps: torch.FloatTensor, 
         reference_free: bool = False,
         text_similarity: torch.FloatTensor = None,
         img_similarity: torch.FloatTensor = None,
@@ -290,6 +325,13 @@ class rDPOTrainer(DPOTrainer):
         if policy_imageless_chosen_logps is not None:
             image_conditional_logits = image_conditional_pi_logratios - image_conditional_ref_logratios  # image-conditional preference
 
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_pi_logratios = policy_chosen_logps - policy_masked_image_chosen_logps
+            masked_image_ref_logratios = reference_chosen_logps - reference_masked_image_chosen_logps
+        
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_logits = masked_image_pi_logratios - masked_image_ref_logratios  # image-conditional preference
+
 
         if self.args.use_text_similarity and text_similarity is not None:
             text_similarity = self.wrap_tensor(text_similarity, logits)
@@ -313,6 +355,13 @@ class rDPOTrainer(DPOTrainer):
                 img_loss = -torch.nn.functional.logsigmoid(beta_img * image_conditional_logits)
             else:
                 img_loss = -torch.nn.functional.logsigmoid(self.beta * image_conditional_logits)
+
+
+
+        if policy_masked_image_chosen_logps is not None:
+            masked_img_loss = -torch.nn.functional.logsigmoid(self.beta * masked_image_logits)
+
+
 
         if self.args.use_sample_weight:
             text_similarity = self.wrap_tensor(text_similarity, logits)
@@ -379,7 +428,10 @@ class rDPOTrainer(DPOTrainer):
                 losses = losses + img_loss
         if text_similarity is None or self.args.filter_factor_text_lower <= text_similarity <= self.args.filter_factor_text_upper:
             losses = losses + text_loss
-        
+        if self.args.use_mask_loss:
+            losses = losses + masked_img_loss
+
+
 
         if self.args.use_anchor:
             anchor_logits = policy_chosen_logps - reference_chosen_logps
@@ -428,11 +480,18 @@ class rDPOTrainer(DPOTrainer):
             )
         else:
             imageless_rewards = -100
+        
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_rewards = (
+                self.beta * (policy_masked_image_chosen_logps - reference_masked_image_chosen_logps).detach()
+            )
+        else:
+            masked_image_rewards = -200
 
         if self.args.use_sample_weight:
-            return losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, sample_weight, text_similarity
+            return losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, sample_weight, text_similarity
         else:
-            return losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, None, None
+            return losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, None, None
     
     def all_gather_tensor(self, tensor):
         if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -450,14 +509,28 @@ class rDPOTrainer(DPOTrainer):
     ):
         metrics = {}
 
+        # 这里检查ref_model:
+
+        def check_lora_status(model, tag="policy"):
+            if hasattr(model, "peft_config"):
+                print(f"[{tag}] Active adapters:", getattr(model, "active_adapter", None))
+                print(f"[{tag}] All adapters:", list(model.peft_config.keys()))
+            else:
+                print(f"[{tag}] No LoRA adapter found")
+
+        
+
         (
             policy_chosen_logps,
             policy_rejected_logps,
             policy_imageless_chosen_logps,
+            policy_masked_image_chosen_logps,
             policy_chosen_logits,
             policy_rejected_logits,
             policy_imageless_chosen_logits,
+            policy_masked_image_chosen_logits,
         ) = self.concatenated_forward(model, batch)
+
         with torch.no_grad():
             if self.ref_model is None:
                 with self.accelerator.unwrap_model(self.model).disable_adapter():
@@ -465,6 +538,8 @@ class rDPOTrainer(DPOTrainer):
                         reference_chosen_logps,
                         reference_rejected_logps,
                         reference_imageless_chosen_logps,
+                        reference_masked_image_chosen_logps,
+                        _,
                         _,
                         _,
                         _,
@@ -474,6 +549,8 @@ class rDPOTrainer(DPOTrainer):
                     reference_chosen_logps,
                     reference_rejected_logps,
                     reference_imageless_chosen_logps,
+                    reference_masked_image_chosen_logps,
+                    _,
                     _,
                     _,
                     _,
@@ -482,13 +559,15 @@ class rDPOTrainer(DPOTrainer):
         text_similarity=batch["text_similarity"]
         img_similarity=batch["img_similarity"]
 
-        losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, sample_weight, text_similarity = self.dpo_loss(
+        losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, sample_weight, text_similarity = self.dpo_loss(
             policy_chosen_logps,
             policy_rejected_logps,
             policy_imageless_chosen_logps,
+            policy_masked_image_chosen_logps,
             reference_chosen_logps,
             reference_rejected_logps,
             reference_imageless_chosen_logps,
+            reference_masked_image_chosen_logps,
             text_similarity=text_similarity,
             img_similarity=img_similarity,
         )
@@ -497,6 +576,7 @@ class rDPOTrainer(DPOTrainer):
 
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
         imageless_reward_accuracies = (chosen_rewards > imageless_rewards).float()
+        masked_image_reward_accuracies = (chosen_rewards > masked_image_rewards).float()
 
         loss = losses.mean()
 
@@ -506,9 +586,9 @@ class rDPOTrainer(DPOTrainer):
 
         # yilin 临时加入sft_weight
         if not hasattr(self, "sft_weight"):
-            self.sft_weight = 0.0
+            self.args.sft_weight = 0.0
 
-        if self.sft_weight > 0.0:
+        if self.args.sft_weight > 0.0:
             if not self.is_encoder_decoder:
                 policy_chosen_logits = policy_chosen_logits[..., :-1, :].contiguous()
                 chosen_labels = chosen_labels[..., 1:].clone()
@@ -523,6 +603,7 @@ class rDPOTrainer(DPOTrainer):
         metrics[f"{prefix}rewards/rejected"] = rejected_rewards.cpu().mean()   
         metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.cpu().mean()
         metrics[f"{prefix}rewards/imageless_accuracies"] = imageless_reward_accuracies.cpu().mean()
+        metrics[f"{prefix}rewards/masked_image_reward_accuracies"] = masked_image_reward_accuracies.cpu().mean()
         metrics[f"{prefix}rewards/margins"] = (chosen_rewards - rejected_rewards).cpu().mean()
         metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.detach().cpu().mean()
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().cpu().mean()
@@ -533,7 +614,11 @@ class rDPOTrainer(DPOTrainer):
             metrics[f"{prefix}logps/imageless_chosen"] = policy_imageless_chosen_logps.detach().cpu().mean()
             metrics[f"{prefix}logits/imageless_chosen"] = policy_imageless_chosen_logits.detach().cpu().mean()
             metrics[f"{prefix}rewards/imageless_chosen"] = imageless_rewards.cpu().mean()
-
+        if isinstance(masked_image_rewards, torch.Tensor): 
+            metrics[f"{prefix}rewards/masked_image_margins"] = (chosen_rewards - masked_image_rewards).cpu().mean()
+            metrics[f"{prefix}logps/masked_image_chosen"] = policy_masked_image_chosen_logps.detach().cpu().mean()
+            metrics[f"{prefix}logits/masked_image_chosen"] = policy_masked_image_chosen_logits.detach().cpu().mean()
+            metrics[f"{prefix}rewards/masked_image_chosen"] = masked_image_rewards.cpu().mean()
 
         metrics[f"{prefix}kl div"] = kl.cpu().mean()
         if self.args.use_sample_weight:
