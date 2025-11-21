@@ -1598,7 +1598,8 @@ class DPOTrainer(Trainer):
                 )
         else:
             if self.is_deepspeed_enabled:
-                self.ref_model = self._prepare_deepspeed(self.ref_model)
+                if any(p.requires_grad for p in self.ref_model.parameters()):
+                    self.ref_model = self._prepare_deepspeed(self.ref_model)
             else:
                 self.ref_model = self.accelerator.prepare_model(self.ref_model, evaluation_mode=True)
 

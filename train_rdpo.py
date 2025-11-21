@@ -116,6 +116,9 @@ class DataArguments:
     is_multimodal: bool = False
     image_folder: Optional[str] = field(default="./dataset/train2014")
     image_aspect_ratio: str = 'pad'
+    num_sample: int = field(
+        default=-1,
+    )
 
 
 @dataclass
@@ -264,7 +267,10 @@ class TrainingArguments(transformers.TrainingArguments):
         default=5,
         metadata={"help": "todo"}
     )
-
+    use_mask_loss: bool = field(
+        default=False,
+        metadata={"help": "todo"}
+    )
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -749,7 +755,9 @@ class Re_AlignDataset(Dataset):
         super(Re_AlignDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
         # 随机采样 12000 条
-        list_data_dict = random.sample(list_data_dict, 12000)
+        if data_args.num_sample != -1:
+            list_data_dict = random.sample(list_data_dict, data_args.num_sample)
+        print(f"采样数目: {data_args.num_sample}")
         print(f"top 10 data: {[x['idx'] for x in list_data_dict[:10]]}")
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
@@ -785,6 +793,7 @@ class Re_AlignDataset(Dataset):
         if 'image' in sources[0]:
             image_file = self.list_data_dict[i]['image']
             retrieved_image_file = self.list_data_dict[i]["retrieved_image"]
+            masked_image_file = self.list_data_dict[i]["masked_image"]
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
@@ -793,6 +802,14 @@ class Re_AlignDataset(Dataset):
                 retrieved_image = Image.open(os.path.join(image_folder, retrieved_image_file)).convert('RGB')
             else:
                 retrieved_image = None
+            
+            if masked_image_file is not None:
+                masked_image = Image.open(os.path.join(image_folder, masked_image_file)).convert('RGB')
+            else:
+                masked_image = None
+            
+
+
             if self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -813,10 +830,19 @@ class Re_AlignDataset(Dataset):
                     retrieved_image = expand2square(retrieved_image, tuple(int(x*255) for x in processor.image_mean))
                     retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
 
+                if masked_image is not None:
+                    masked_image = expand2square(masked_image, tuple(int(x*255) for x in processor.image_mean))
+                    masked_image = processor.preprocess(masked_image, return_tensors='pt')['pixel_values'][0]
+
+
             else:
                 image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
                 if retrieved_image is not None:
                     retrieved_image = processor.preprocess(retrieved_image, return_tensors='pt')['pixel_values'][0]
+                
+                if masked_image is not None:
+                    masked_image = processor.preprocess(masked_image, return_tensors='pt')['pixel_values'][0]
+
 
             sources = preprocess_multimodal(
                 copy.deepcopy([e["chosen"] for e in sources]),
@@ -860,13 +886,15 @@ class Re_AlignDataset(Dataset):
         if 'image' in self.list_data_dict[i]:
             data_dict['images'] = image
             data_dict['retrieved_images'] = retrieved_image
+            data_dict['masked_images'] = masked_image
         elif self.data_args.is_multimodal:
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
             data_dict['retrieved_images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
-        
-        # yilin
+            data_dict['masked_images'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+
+        # yilin 
         # if "cosine_similarity" in sources[0]:
         #     cosine_similarity = sources[0]['cosine_similarity']
         #     if isinstance(cosine_similarity, list):
@@ -937,18 +965,31 @@ class DataCollatorForRe_AlignDataset(object):
         if 'images' in instances[0]:
             images = [instance['images'] for instance in instances]
             retrieved_images = [instance['retrieved_images'] for instance in instances]
+            masked_images = [instance['masked_images'] for instance in instances]
+
             if all(x is not None and x.shape == images[0].shape for x in images):
                 batch['images'] = torch.stack(images)
                 if all(x is not None for x in retrieved_images):
                     batch['retrieved_images'] = torch.stack(retrieved_images)
                 else:
                     batch['retrieved_images'] = None
+                
+                if all(x is not None for x in masked_images):
+                    batch['masked_images'] = torch.stack(masked_images)
+                else:
+                    batch['masked_images'] = None
+
             else:
                 batch['images'] = images
                 if all(x is not None for x in retrieved_images):
                     batch['retrieved_images'] = retrieved_images
                 else:
                     batch['retrieved_images'] = None
+
+                if all(x is not None for x in masked_images):
+                    batch['masked_images'] = masked_images
+                else:
+                    batch['masked_images'] = None
 
         # if "cosine_similarity" in instances[0]:
         #     cosine_similarity = [instance["cosine_similarity"] for instance in instances]
@@ -1078,6 +1119,9 @@ def train():
         else:
             model = get_peft_model(model, lora_config)
 
+
+
+
     if 'mpt' in model_args.model_name_or_path:
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_args.model_name_or_path,
@@ -1198,13 +1242,7 @@ def train():
                         module = module.to(torch.bfloat16)
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
-    # from peft import PeftModel
-    # from trl import DPOTrainer
-    # 随机选12K个数据
-    # indices = random.sample(range(len(data_module['train_dataset'])), 12000)
-    # print(f"seed: {seed}, indices: {indices[:10]}")
-    # shuffled_dataset = Subset(data_module['train_dataset'], indices)
-    # data_module['train_dataset'] = shuffled_dataset
+
     trainer_callbacks = []
 
     if training_args.lora_enable:

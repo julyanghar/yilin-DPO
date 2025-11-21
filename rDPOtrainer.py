@@ -81,119 +81,54 @@ class rDPOTrainer(DPOTrainer):
                 ).to(self.accelerator.device)
 
         # concatenated_batch["concatenated_images"] = batch["images"] + batch["images"]
-
+        concatenated_batch["concatenated_images"] = torch.cat(
+            (batch["images"], batch["images"]), dim=0
+        )
         if self.is_encoder_decoder:
             concatenated_batch["concatenated_input_ids"] = batch["prompt_input_ids"].repeat(2, 1)
             concatenated_batch["concatenated_attention_mask"] = batch["prompt_attention_mask"].repeat(2, 1)
 
         return concatenated_batch
+
     
     def concatenated_forward(
         self, model: torch.nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         concatenated_batch = self.concatenated_inputs(batch)
         len_chosen = batch["chosen_labels"].shape[0]
-        chosen_batch = concatenated_batch["concatenated_input_ids"][:len_chosen]
-        rejected_batch = concatenated_batch["concatenated_input_ids"][len_chosen:]
-        chosen_mask = concatenated_batch["concatenated_attention_mask"][:len_chosen]
-        rejected_mask = concatenated_batch["concatenated_attention_mask"][len_chosen:]
-        chosen_label = concatenated_batch["concatenated_labels"][:len_chosen]
-        rejected_label = concatenated_batch["concatenated_labels"][len_chosen:]
+        # chosen_batch = concatenated_batch["concatenated_input_ids"][:len_chosen]
+        # rejected_batch = concatenated_batch["concatenated_input_ids"][len_chosen:]
+        # chosen_mask = concatenated_batch["concatenated_attention_mask"][:len_chosen]
+        # rejected_mask = concatenated_batch["concatenated_attention_mask"][len_chosen:]
+        # chosen_label = concatenated_batch["concatenated_labels"][:len_chosen]
+        # rejected_label = concatenated_batch["concatenated_labels"][len_chosen:]
 
         # 应该没有用到batch当中的prompt
-        chosen_model_kwargs = (
-            {
-                "labels": chosen_label,
-                "decoder_input_ids": concatenated_batch.pop("chosen_decoder_input_ids", None),
-            }
-            if self.is_encoder_decoder
-            else {}
-        )    
-        rejected_model_kwargs = (
-            {
-                "labels": rejected_label,
-                "decoder_input_ids": concatenated_batch.pop("rejected_decoder_input_ids", None),
-            }
-            if self.is_encoder_decoder
-            else {}
+
+        model_kwargs = {
+            "images": concatenated_batch["concatenated_images"],
+            "labels": concatenated_batch["concatenated_labels"],
+        }
+
+        outputs = model(
+            concatenated_batch["concatenated_input_ids"],
+            attention_mask=concatenated_batch["concatenated_attention_mask"],
+            **model_kwargs,
         )
-
-        # model_kwargs = {
-        #     "images": concatenated_batch["concatenated_images"],
-        #     "labels": concatenated_batch["concatenated_labels"],
-        # }
-
-        # outputs, refined_labels = model(
-        #     concatenated_batch["concatenated_input_ids"],
-        #     attention_mask=concatenated_batch["concatenated_attention_mask"],
-        #     **model_kwargs,
-        # )
-        # all_logits = outputs.logits.to(torch.float32)
-
-        # all_logps = self._get_batch_logps(
-        #     all_logits,
-        #     refined_labels,
-        #     average_log_prob=False,
-        # )
-
-        # chosen_logps = all_logps[:len_chosen]
-        # rejected_logps = all_logps[len_chosen:]
-
-        # chosen_logits = all_logits[:len_chosen]
-        # rejected_logits = all_logits[len_chosen:]
-
-        # imageless_model_kwargs = {
-        #         "labels": batch["chosen_labels"],
-        #         "images": batch["image"],
-        #         "mask_visual_tokens": True,
-        #     }
-            
-        # imageless_chosen_outputs, imageless_chosen_label = model(
-        #     batch["chosen_input_ids"],
-        #     attention_mask=batch["chosen_attention_mask"],
-        #     **imageless_model_kwargs,
-        # )
-        # MM-RLHF中，这里同时返回了new_chosen_labels(new_labels)
-        chosen_logits = model(
-            input_ids = chosen_batch,
-            labels = chosen_label,
-            images=batch['images'],
-            attention_mask=chosen_mask,
-            **chosen_model_kwargs,
-        ).logits.to(torch.float32)
-
-        _, _, _, _, _, new_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
-                input_ids = chosen_batch,
-                position_ids = None,
-                attention_mask = chosen_mask,
-                past_key_values = None,
-                labels = chosen_label,
-                images = batch['images']
-            )
         
-        chosen_logps = self._get_batch_logps(
-            chosen_logits,
-            new_chosen_labels,
+        all_logits = outputs.logits.to(torch.float32)
+
+        all_logps = self._get_batch_logps(
+            all_logits,
+            concatenated_batch["concatenated_labels"],
             average_log_prob=False,
         )
 
-        rejected_logits = model(
-            input_ids = rejected_batch,
-            labels = rejected_label,
-            images=batch['images'],
-            attention_mask=rejected_mask,
-            **rejected_model_kwargs,
-        ).logits.to(torch.float32)
+        chosen_logps = all_logps[:len_chosen]
+        rejected_logps = all_logps[len_chosen:]
 
-        _, _, _, _, _, new_rejected_labels = self.model.prepare_inputs_labels_for_multimodal(
-                input_ids = rejected_batch,
-                position_ids = None,
-                attention_mask = rejected_mask,
-                past_key_values = None,
-                labels = rejected_label,
-                images = batch['images']
-            )
-
+        chosen_logits = all_logits[:len_chosen]
+        rejected_logits = all_logits[len_chosen:]
 
         # rejected_logps = self._get_noisy_batch_logps(
         #     rejected_logits,
@@ -202,70 +137,283 @@ class rDPOTrainer(DPOTrainer):
         #     average_log_prob=False,
         # )
 
-        rejected_logps = self._get_batch_logps(
-            rejected_logits,
-            new_rejected_labels,
-            average_log_prob=False,
-        )
-
-
-        # imageless_model_kwargs = {
-        #         "labels": batch["chosen_labels"],
-        #         "images": batch["retrieved_images"],
-        #     }
-        
-        # imageless_chosen_outputs, imageless_chosen_label = model(
-        #     batch["chosen_input_ids"],
-        #     attention_mask=batch["chosen_attention_mask"],
-        #     **imageless_model_kwargs,
-        # )
-
-        # imageless_chosen_logits = imageless_chosen_outputs.logits.to(torch.float32)
-
-        # imageless_chosen_logps = self._get_batch_logps(
-        #     imageless_chosen_logits,
-        #     imageless_chosen_label,
-        #     average_log_prob=False,
-        # )
-
         if batch['retrieved_images'] is not None:
-            imageless_chosen_logits = model(
-                input_ids = chosen_batch,
-                labels = chosen_label,
-                images=batch['retrieved_images'],
-                attention_mask=chosen_mask,
-                **chosen_model_kwargs,
-            ).logits.to(torch.float32)
+            imageless_model_kwargs = {
+                "labels": batch["chosen_labels"],
+                "images": batch["retrieved_images"],
+            }
+                
+            imageless_chosen_outputs = model(
+                batch["chosen_input_ids"],
+                attention_mask=batch["chosen_attention_mask"],
+                **imageless_model_kwargs,
+            )
+            imageless_chosen_logits = imageless_chosen_outputs.logits.to(torch.float32)
 
-            _, _, _, _, _, new_imageless_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
-                    input_ids = chosen_batch,
-                    position_ids = None,
-                    attention_mask = chosen_mask,
-                    past_key_values = None,
-                    labels = chosen_label,
-                    images = batch['retrieved_images']
-                )
-            # 这里或许可以不用noisy
-            imageless_chosen_logps = self._get_noisy_batch_logps(
+            imageless_chosen_logps = self._get_batch_logps(
                 imageless_chosen_logits,
-                imageless_chosen_logits,
-                new_imageless_chosen_labels,
+                batch["chosen_labels"],
+                average_log_prob=False,
+            )
+        else:
+            imageless_chosen_logits = imageless_chosen_logps = None
+
+        
+        if batch['masked_images'] is not None:
+            masked_model_kwargs = {
+                "labels": batch["chosen_labels"],
+                "images": batch["masked_images"],
+            }
+                
+            masked_image_chosen_outputs = model(
+                batch["chosen_input_ids"],
+                attention_mask=batch["chosen_attention_mask"],
+                **masked_model_kwargs,
+            )
+            masked_image_chosen_logits = masked_image_chosen_outputs.logits.to(torch.float32)
+
+            masked_image_chosen_logps = self._get_batch_logps(
+                masked_image_chosen_logits,
+                batch["chosen_labels"],
                 average_log_prob=False,
             )
 
-        else:
-            imageless_chosen_logits = new_imageless_chosen_labels = imageless_chosen_logps = None
+            # 这里或许可以不用noisy
+            # masked_image_chosen_logps = self._get_noisy_batch_logps(
+            #     masked_image_chosen_logits,
+            #     masked_image_chosen_logits,
+            #     masked_image_chosen_labels,
+            #     average_log_prob=False,
+            # )
 
-        return (chosen_logps, rejected_logps, imageless_chosen_logps, chosen_logits, rejected_logits, imageless_chosen_logits)
+        else:
+            masked_image_chosen_logits = masked_image_chosen_logps = None
+
+
+        return (
+                chosen_logps, rejected_logps, imageless_chosen_logps, masked_image_chosen_logps,
+                chosen_logits, rejected_logits, imageless_chosen_logits, masked_image_chosen_logits
+                )
+
+    # def concatenated_forward(
+    #     self, model: torch.nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
+    # ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+    #     concatenated_batch = self.concatenated_inputs(batch)
+    #     len_chosen = batch["chosen_labels"].shape[0]
+    #     chosen_batch = concatenated_batch["concatenated_input_ids"][:len_chosen]
+    #     rejected_batch = concatenated_batch["concatenated_input_ids"][len_chosen:]
+    #     chosen_mask = concatenated_batch["concatenated_attention_mask"][:len_chosen]
+    #     rejected_mask = concatenated_batch["concatenated_attention_mask"][len_chosen:]
+    #     chosen_label = concatenated_batch["concatenated_labels"][:len_chosen]
+    #     rejected_label = concatenated_batch["concatenated_labels"][len_chosen:]
+
+    #     # 应该没有用到batch当中的prompt
+    #     chosen_model_kwargs = (
+    #         {
+    #             "labels": chosen_label,
+    #             "decoder_input_ids": concatenated_batch.pop("chosen_decoder_input_ids", None),
+    #         }
+    #         if self.is_encoder_decoder
+    #         else {}
+    #     )    
+    #     rejected_model_kwargs = (
+    #         {
+    #             "labels": rejected_label,
+    #             "decoder_input_ids": concatenated_batch.pop("rejected_decoder_input_ids", None),
+    #         }
+    #         if self.is_encoder_decoder
+    #         else {}
+    #     )
+
+    #     # model_kwargs = {
+    #     #     "images": concatenated_batch["concatenated_images"],
+    #     #     "labels": concatenated_batch["concatenated_labels"],
+    #     # }
+
+    #     # outputs, refined_labels = model(
+    #     #     concatenated_batch["concatenated_input_ids"],
+    #     #     attention_mask=concatenated_batch["concatenated_attention_mask"],
+    #     #     **model_kwargs,
+    #     # )
+    #     # all_logits = outputs.logits.to(torch.float32)
+
+    #     # all_logps = self._get_batch_logps(
+    #     #     all_logits,
+    #     #     refined_labels,
+    #     #     average_log_prob=False,
+    #     # )
+
+    #     # chosen_logps = all_logps[:len_chosen]
+    #     # rejected_logps = all_logps[len_chosen:]
+
+    #     # chosen_logits = all_logits[:len_chosen]
+    #     # rejected_logits = all_logits[len_chosen:]
+
+    #     # imageless_model_kwargs = {
+    #     #         "labels": batch["chosen_labels"],
+    #     #         "images": batch["image"],
+    #     #         "mask_visual_tokens": True,
+    #     #     }
+            
+    #     # imageless_chosen_outputs, imageless_chosen_label = model(
+    #     #     batch["chosen_input_ids"],
+    #     #     attention_mask=batch["chosen_attention_mask"],
+    #     #     **imageless_model_kwargs,
+    #     # )
+    #     # MM-RLHF中，这里同时返回了new_chosen_labels(new_labels)
+    #     chosen_logits = model(
+    #         input_ids = chosen_batch,
+    #         labels = chosen_label,
+    #         images=batch['images'],
+    #         attention_mask=chosen_mask,
+    #         **chosen_model_kwargs,
+    #     ).logits.to(torch.float32)
+
+    #     _, _, _, _, _, new_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
+    #             input_ids = chosen_batch,
+    #             position_ids = None,
+    #             attention_mask = chosen_mask,
+    #             past_key_values = None,
+    #             labels = chosen_label,
+    #             images = batch['images']
+    #         )
+        
+    #     chosen_logps = self._get_batch_logps(
+    #         chosen_logits,
+    #         new_chosen_labels,
+    #         average_log_prob=False,
+    #     )
+
+    #     rejected_logits = model(
+    #         input_ids = rejected_batch,
+    #         labels = rejected_label,
+    #         images=batch['images'],
+    #         attention_mask=rejected_mask,
+    #         **rejected_model_kwargs,
+    #     ).logits.to(torch.float32)
+
+    #     _, _, _, _, _, new_rejected_labels = self.model.prepare_inputs_labels_for_multimodal(
+    #             input_ids = rejected_batch,
+    #             position_ids = None,
+    #             attention_mask = rejected_mask,
+    #             past_key_values = None,
+    #             labels = rejected_label,
+    #             images = batch['images']
+    #         )
+
+
+    #     rejected_logps = self._get_noisy_batch_logps(
+    #         rejected_logits,
+    #         rejected_logits,
+    #         new_rejected_labels,
+    #         average_log_prob=False,
+    #     )
+
+    #     # rejected_logps = self._get_batch_logps(
+    #     #     rejected_logits,
+    #     #     new_rejected_labels,
+    #     #     average_log_prob=False,
+    #     # )
+
+
+    #     # imageless_model_kwargs = {
+    #     #         "labels": batch["chosen_labels"],
+    #     #         "images": batch["retrieved_images"],
+    #     #     }
+        
+    #     # imageless_chosen_outputs, imageless_chosen_label = model(
+    #     #     batch["chosen_input_ids"],
+    #     #     attention_mask=batch["chosen_attention_mask"],
+    #     #     **imageless_model_kwargs,
+    #     # )
+
+    #     # imageless_chosen_logits = imageless_chosen_outputs.logits.to(torch.float32)
+
+    #     # imageless_chosen_logps = self._get_batch_logps(
+    #     #     imageless_chosen_logits,
+    #     #     imageless_chosen_label,
+    #     #     average_log_prob=False,
+    #     # )
+
+    #     if batch['retrieved_images'] is not None:
+    #         imageless_chosen_logits = model(
+    #             input_ids = chosen_batch,
+    #             labels = chosen_label,
+    #             images=batch['retrieved_images'],
+    #             attention_mask=chosen_mask,
+    #             **chosen_model_kwargs,
+    #         ).logits.to(torch.float32)
+
+    #         _, _, _, _, _, new_imageless_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
+    #                 input_ids = chosen_batch,
+    #                 position_ids = None,
+    #                 attention_mask = chosen_mask,
+    #                 past_key_values = None,
+    #                 labels = chosen_label,
+    #                 images = batch['retrieved_images']
+    #             )
+    #         # 这里或许可以不用noisy
+    #         imageless_chosen_logps = self._get_noisy_batch_logps(
+    #             imageless_chosen_logits,
+    #             imageless_chosen_logits,
+    #             new_imageless_chosen_labels,
+    #             average_log_prob=False,
+    #         )
+
+    #         # imageless_chosen_logps = self._get_batch_logps(
+    #         #     imageless_chosen_logits,
+    #         #     new_imageless_chosen_labels,
+    #         #     average_log_prob=False,
+    #         # )
+
+    #     else:
+    #         imageless_chosen_logits = new_imageless_chosen_labels = imageless_chosen_logps = None
+
+        
+    #     if batch['masked_images'] is not None:
+    #         masked_image_chosen_logits = model(
+    #             input_ids = chosen_batch,
+    #             labels = chosen_label,
+    #             images=batch['masked_images'],
+    #             attention_mask=chosen_mask,
+    #             **chosen_model_kwargs,
+    #         ).logits.to(torch.float32)
+
+    #         _, _, _, _, _, masked_image_chosen_labels = self.model.prepare_inputs_labels_for_multimodal(
+    #                 input_ids = chosen_batch,
+    #                 position_ids = None,
+    #                 attention_mask = chosen_mask,
+    #                 past_key_values = None,
+    #                 labels = chosen_label,
+    #                 images = batch['masked_images']
+    #             )
+    #         # 这里或许可以不用noisy
+    #         masked_image_chosen_logps = self._get_noisy_batch_logps(
+    #             masked_image_chosen_logits,
+    #             masked_image_chosen_logits,
+    #             masked_image_chosen_labels,
+    #             average_log_prob=False,
+    #         )
+
+    #     else:
+    #         masked_image_chosen_logits = masked_image_chosen_labels = masked_image_chosen_logps = None
+
+
+    #     return (
+    #             chosen_logps, rejected_logps, imageless_chosen_logps, masked_image_chosen_logps,
+    #             chosen_logits, rejected_logits, imageless_chosen_logits, masked_image_chosen_logits
+    #             )
 
     def dpo_loss(
         self,
         policy_chosen_logps: torch.FloatTensor,
         policy_rejected_logps: torch.FloatTensor,
         policy_imageless_chosen_logps: torch.FloatTensor, 
+        policy_masked_image_chosen_logps: torch.FloatTensor, 
         reference_chosen_logps: torch.FloatTensor,
         reference_rejected_logps: torch.FloatTensor,
         reference_imageless_chosen_logps: torch.FloatTensor, 
+        reference_masked_image_chosen_logps: torch.FloatTensor, 
         reference_free: bool = False,
         text_similarity: torch.FloatTensor = None,
         img_similarity: torch.FloatTensor = None,
@@ -289,6 +437,13 @@ class rDPOTrainer(DPOTrainer):
 
         if policy_imageless_chosen_logps is not None:
             image_conditional_logits = image_conditional_pi_logratios - image_conditional_ref_logratios  # image-conditional preference
+
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_pi_logratios = policy_chosen_logps - policy_masked_image_chosen_logps
+            masked_image_ref_logratios = reference_chosen_logps - reference_masked_image_chosen_logps
+        
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_logits = masked_image_pi_logratios - masked_image_ref_logratios  # image-conditional preference
 
 
         if self.args.use_text_similarity and text_similarity is not None:
@@ -314,64 +469,74 @@ class rDPOTrainer(DPOTrainer):
             else:
                 img_loss = -torch.nn.functional.logsigmoid(self.beta * image_conditional_logits)
 
-        if self.args.use_sample_weight:
-            text_similarity = self.wrap_tensor(text_similarity, logits)
-            # 反比
-            # text_loss = text_loss * torch.exp((self.args.sample_anchor - text_similarity))
-            # 正比
-            # text_loss = text_loss * torch.exp((text_similarity - self.args.sample_anchor))
 
-            # use self.text_similarity_mean 
-            # 这里text_similarity，或许也可以换成整个batch的similarity的均值
-            sample_weight = torch.exp(self.args.ls_factor_weight*(1 - text_similarity))
-            # 截断，避免出现极值（可以尝试修改min和max）
-            sample_weight.clamp(1, 5)
-            # 对sample_weight做批内归一化，保证均值为1
-            # sample_weight_mean = sample_weight.clone()
-            # torch.distributed.all_reduce(sample_weight_mean, op=torch.distributed.ReduceOp.SUM)
-            # sample_weight_mean /= torch.distributed.get_world_size()
-            # sample_weight /= sample_weight_mean
-            text_loss = text_loss * sample_weight
+
+        if policy_masked_image_chosen_logps is not None:
+            masked_img_loss = -torch.nn.functional.logsigmoid(self.beta * masked_image_logits)
+
+
+
+        # if self.args.use_sample_weight:
+        #     text_similarity = self.wrap_tensor(text_similarity, logits)
+        #     # 反比
+        #     # text_loss = text_loss * torch.exp((self.args.sample_anchor - text_similarity))
+        #     # 正比
+        #     # text_loss = text_loss * torch.exp((text_similarity - self.args.sample_anchor))
+
+        #     # use self.text_similarity_mean 
+        #     # 这里text_similarity，或许也可以换成整个batch的similarity的均值
+        #     sample_weight = torch.exp(self.args.ls_factor_weight*(1 - text_similarity))
+        #     # 截断，避免出现极值（可以尝试修改min和max）
+        #     sample_weight.clamp(1, 5)
+        #     # 对sample_weight做批内归一化，保证均值为1
+        #     # sample_weight_mean = sample_weight.clone()
+        #     # torch.distributed.all_reduce(sample_weight_mean, op=torch.distributed.ReduceOp.SUM)
+        #     # sample_weight_mean /= torch.distributed.get_world_size()
+        #     # sample_weight /= sample_weight_mean
+        #     text_loss = text_loss * sample_weight
         
-        if self.args.beta_dpo:
-            def all_gather_tensor(tensor):
-                if torch.distributed.is_available() and torch.distributed.is_initialized():
-                    tensor = tensor.detach()
-                    gathered_tensor = [torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())]
-                    torch.distributed.all_gather(gathered_tensor, tensor)
-                    tensor = torch.cat(gathered_tensor, dim=0)
-                # else:
-                #     print('not distributed')
-                return tensor
-            A = all_gather_tensor(logits.detach())
-            mean = torch.mean(A)
-            std = torch.std(A)
-            weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
-            sample_num = int(weight_sample.numel() * (1 - 0.2) )
-            sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
-            one_hot_like = torch.zeros_like(weight_sample)
-            one_hot_like[sample_index] = 1
 
-            A_used = torch.mean(A[sample_index])
-            text_beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
-            text_beta_used = text_beta_used.clamp(min=1e-3)
 
-            A = all_gather_tensor(image_conditional_logits.detach())
-            mean = torch.mean(A)
-            std = torch.std(A)
-            weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
-            sample_num = int(weight_sample.numel() * (1 - 0.2) )
-            sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
-            one_hot_like = torch.zeros_like(weight_sample)
-            one_hot_like[sample_index] = 1
+
+        # if self.args.beta_dpo:
+        #     def all_gather_tensor(tensor):
+        #         if torch.distributed.is_available() and torch.distributed.is_initialized():
+        #             tensor = tensor.detach()
+        #             gathered_tensor = [torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())]
+        #             torch.distributed.all_gather(gathered_tensor, tensor)
+        #             tensor = torch.cat(gathered_tensor, dim=0)
+        #         # else:
+        #         #     print('not distributed')
+        #         return tensor
+        #     A = all_gather_tensor(logits.detach())
+        #     mean = torch.mean(A)
+        #     std = torch.std(A)
+        #     weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
+        #     sample_num = int(weight_sample.numel() * (1 - 0.2) )
+        #     sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
+        #     one_hot_like = torch.zeros_like(weight_sample)
+        #     one_hot_like[sample_index] = 1
+
+        #     A_used = torch.mean(A[sample_index])
+        #     text_beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
+        #     text_beta_used = text_beta_used.clamp(min=1e-3)
+
+        #     A = all_gather_tensor(image_conditional_logits.detach())
+        #     mean = torch.mean(A)
+        #     std = torch.std(A)
+        #     weight_sample = torch.exp(-0.5 * ((A - mean) / (std + 1e-7)).pow(2))
+        #     sample_num = int(weight_sample.numel() * (1 - 0.2) )
+        #     sample_index = torch.multinomial(weight_sample, sample_num, replacement=False)
+        #     one_hot_like = torch.zeros_like(weight_sample)
+        #     one_hot_like[sample_index] = 1
             
-            A_used = torch.mean(A[sample_index])
-            img_beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
-            img_beta_used = img_beta_used.clamp(min=1e-3)
+        #     A_used = torch.mean(A[sample_index])
+        #     img_beta_used = self.beta * (1 + self.args.ls_factor_weight * (A_used - mean))
+        #     img_beta_used = img_beta_used.clamp(min=1e-3)
 
 
-            losses = -torch.nn.functional.logsigmoid(text_beta_used * logits) \
-            -torch.nn.functional.logsigmoid(img_beta_used * image_conditional_logits)
+        #     losses = -torch.nn.functional.logsigmoid(text_beta_used * logits) \
+        #     -torch.nn.functional.logsigmoid(img_beta_used * image_conditional_logits)
 
         losses = (logits * 0).sum()
         if policy_imageless_chosen_logps is not None:
@@ -379,7 +544,10 @@ class rDPOTrainer(DPOTrainer):
                 losses = losses + img_loss
         if text_similarity is None or self.args.filter_factor_text_lower <= text_similarity <= self.args.filter_factor_text_upper:
             losses = losses + text_loss
-        
+        if self.args.use_mask_loss:
+            losses = losses + masked_img_loss
+
+
 
         if self.args.use_anchor:
             anchor_logits = policy_chosen_logps - reference_chosen_logps
@@ -388,13 +556,14 @@ class rDPOTrainer(DPOTrainer):
             # anchor_logits_rejected = policy_rejected_logps - reference_rejected_logps
             # losses = losses + (-torch.nn.functional.logsigmoid(-self.args.anchor_beta * anchor_logits_imageless) + \
             #            (-torch.nn.functional.logsigmoid(-self.args.anchor_beta * anchor_logits_rejected) ))
-        elif self.args.yilin_anchor:
-            anchor_logits = policy_chosen_logps - reference_chosen_logps
-            # 正比
-            # yilin_anchor_weight = 1 + self.args.ls_factor_weight * (text_similarity - 0.5)
-            # 反比
-            yilin_anchor_weight = torch.exp(torch.tensor(self.args.ls_factor_weight * (1 - text_similarity)).to(device=logits.device))
-            losses = losses + yilin_anchor_weight * (-torch.nn.functional.logsigmoid(self.beta * anchor_logits))
+        
+        # elif self.args.yilin_anchor:
+        #     anchor_logits = policy_chosen_logps - reference_chosen_logps
+        #     # 正比
+        #     # yilin_anchor_weight = 1 + self.args.ls_factor_weight * (text_similarity - 0.5)
+        #     # 反比
+        #     yilin_anchor_weight = torch.exp(torch.tensor(self.args.ls_factor_weight * (1 - text_similarity)).to(device=logits.device))
+        #     losses = losses + yilin_anchor_weight * (-torch.nn.functional.logsigmoid(self.beta * anchor_logits))
         
         # elif self.args.only_cal_dpo:
         #     cal_loss = F.mse_loss(chosen_rewards,
@@ -428,11 +597,18 @@ class rDPOTrainer(DPOTrainer):
             )
         else:
             imageless_rewards = -100
+        
+        if policy_masked_image_chosen_logps is not None:
+            masked_image_rewards = (
+                self.beta * (policy_masked_image_chosen_logps - reference_masked_image_chosen_logps).detach()
+            )
+        else:
+            masked_image_rewards = -200
 
         if self.args.use_sample_weight:
-            return losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, sample_weight, text_similarity
+            return losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, text_similarity
         else:
-            return losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, None, None
+            return losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, None
     
     def all_gather_tensor(self, tensor):
         if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -450,14 +626,28 @@ class rDPOTrainer(DPOTrainer):
     ):
         metrics = {}
 
+        # 这里检查ref_model:
+
+        def check_lora_status(model, tag="policy"):
+            if hasattr(model, "peft_config"):
+                print(f"[{tag}] Active adapters:", getattr(model, "active_adapter", None))
+                print(f"[{tag}] All adapters:", list(model.peft_config.keys()))
+            else:
+                print(f"[{tag}] No LoRA adapter found")
+
+        
+
         (
             policy_chosen_logps,
             policy_rejected_logps,
             policy_imageless_chosen_logps,
+            policy_masked_image_chosen_logps,
             policy_chosen_logits,
             policy_rejected_logits,
             policy_imageless_chosen_logits,
+            policy_masked_image_chosen_logits,
         ) = self.concatenated_forward(model, batch)
+
         with torch.no_grad():
             if self.ref_model is None:
                 with self.accelerator.unwrap_model(self.model).disable_adapter():
@@ -465,30 +655,48 @@ class rDPOTrainer(DPOTrainer):
                         reference_chosen_logps,
                         reference_rejected_logps,
                         reference_imageless_chosen_logps,
+                        reference_masked_image_chosen_logps,
                         _,
                         _,
                         _,
-                    ) = self.concatenated_forward(self.model, batch)
+                        _,
+                    ) = self.concatenated_forward(model, batch)
             else:
                 (
                     reference_chosen_logps,
                     reference_rejected_logps,
                     reference_imageless_chosen_logps,
+                    reference_masked_image_chosen_logps,
                     _,
                     _,
                     _,
-                ) = self.concatenated_forward(self.ref_model, batch)
+                    _,
+                ) = self.concatenated_forward(model, batch)
+
+        # (
+        #     reference_chosen_logps,
+        #     reference_rejected_logps,
+        #     reference_imageless_chosen_logps,
+        #     reference_masked_image_chosen_logps,
+        #     _,
+        #     _,
+        #     _,
+        #     _,
+        # ) = self.concatenated_forward(self.model, batch)
+
 
         text_similarity=batch["text_similarity"]
         img_similarity=batch["img_similarity"]
 
-        losses, chosen_rewards, rejected_rewards, imageless_rewards, kl, sample_weight, text_similarity = self.dpo_loss(
+        losses, chosen_rewards, rejected_rewards, imageless_rewards, masked_image_rewards, kl, text_similarity = self.dpo_loss(
             policy_chosen_logps,
             policy_rejected_logps,
             policy_imageless_chosen_logps,
+            policy_masked_image_chosen_logps,
             reference_chosen_logps,
             reference_rejected_logps,
             reference_imageless_chosen_logps,
+            reference_masked_image_chosen_logps,
             text_similarity=text_similarity,
             img_similarity=img_similarity,
         )
@@ -497,6 +705,7 @@ class rDPOTrainer(DPOTrainer):
 
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
         imageless_reward_accuracies = (chosen_rewards > imageless_rewards).float()
+        masked_image_reward_accuracies = (chosen_rewards > masked_image_rewards).float()
 
         loss = losses.mean()
 
@@ -506,9 +715,9 @@ class rDPOTrainer(DPOTrainer):
 
         # yilin 临时加入sft_weight
         if not hasattr(self, "sft_weight"):
-            self.sft_weight = 0.0
+            self.args.sft_weight = 0.0
 
-        if self.sft_weight > 0.0:
+        if self.args.sft_weight > 0.0:
             if not self.is_encoder_decoder:
                 policy_chosen_logits = policy_chosen_logits[..., :-1, :].contiguous()
                 chosen_labels = chosen_labels[..., 1:].clone()
@@ -523,6 +732,7 @@ class rDPOTrainer(DPOTrainer):
         metrics[f"{prefix}rewards/rejected"] = rejected_rewards.cpu().mean()   
         metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.cpu().mean()
         metrics[f"{prefix}rewards/imageless_accuracies"] = imageless_reward_accuracies.cpu().mean()
+        metrics[f"{prefix}rewards/masked_image_reward_accuracies"] = masked_image_reward_accuracies.cpu().mean()
         metrics[f"{prefix}rewards/margins"] = (chosen_rewards - rejected_rewards).cpu().mean()
         metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.detach().cpu().mean()
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().cpu().mean()
@@ -533,11 +743,17 @@ class rDPOTrainer(DPOTrainer):
             metrics[f"{prefix}logps/imageless_chosen"] = policy_imageless_chosen_logps.detach().cpu().mean()
             metrics[f"{prefix}logits/imageless_chosen"] = policy_imageless_chosen_logits.detach().cpu().mean()
             metrics[f"{prefix}rewards/imageless_chosen"] = imageless_rewards.cpu().mean()
-
+        if isinstance(masked_image_rewards, torch.Tensor): 
+            metrics[f"{prefix}rewards/masked_image_margins"] = (chosen_rewards - masked_image_rewards).cpu().mean()
+            metrics[f"{prefix}logps/masked_image_chosen"] = policy_masked_image_chosen_logps.detach().cpu().mean()
+            metrics[f"{prefix}logits/masked_image_chosen"] = policy_masked_image_chosen_logits.detach().cpu().mean()
+            metrics[f"{prefix}rewards/masked_image_chosen"] = masked_image_rewards.cpu().mean()
+        metrics[f"{prefix}logps/reference_chosen_logps"] = reference_chosen_logps.detach().cpu().mean()
+        metrics[f"{prefix}logps/reference_rejected_logps"] = reference_rejected_logps.detach().cpu().mean()
+        metrics[f"{prefix}logps/reference_imageless_chosen_logps"] = reference_imageless_chosen_logps.detach().cpu().mean()
 
         metrics[f"{prefix}kl div"] = kl.cpu().mean()
         if self.args.use_sample_weight:
-            metrics[f"{prefix}sample_weight"] = sample_weight.cpu().mean()
             metrics[f"{prefix}text_similarity div"] = text_similarity.cpu().mean()
             metrics[f"{prefix}text_similarity_mean div"] = self.text_similarity_mean.cpu().mean()
 

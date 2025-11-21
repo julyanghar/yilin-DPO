@@ -27,6 +27,7 @@ def export_folder_names_to_json(root_path, output_file="./folders.json"):
 
 if __name__ == "__main__":
     # 修改这里为你要扫描的目录
-    target_path = r"/home/yilin/yilin-DPO/output/llava-v1.5-7b"  # Windows 示例
+    # target_path = r"/home/yilin/yilin-DPO/output/llava-v1.5-7b"  # Windows 示例
+    target_path = r"/home/yilin/yilin-DPO/output/llava-v1.6-vicuna-7b"  # Windows 示例
     # target_path = "/home/username/path" # Linux 示例
     export_folder_names_to_json(target_path)

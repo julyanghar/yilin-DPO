@@ -1,8 +1,20 @@
 [
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-0",
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-1",
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-0",
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-1",
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-True-2",
-    "mm_dpo-lr-1e-05-acc_batch-8-beta-0.1-use_anchor-False-2"
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-10",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-0",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-6",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-9",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-1",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-8",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-9",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-3",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-7",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-11",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-4",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-7",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-5",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-11",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-2",
+    "filter_text-upper-0.9-lower-0-lr-0.0002-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-6",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-10",
+    "filter_text-upper-0.9-lower-0-lr-0.0003-batch-12-beta-0.1-anchor-True-llava-v1.6-vicuna-7b-8"
 ]
